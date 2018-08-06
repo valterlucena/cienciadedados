@@ -1,0 +1,143 @@
+---
+title: "Análise de popularidades de linguagens de programação."
+uthor: "Valter Lucena"
+date: "13 de julho de 2018"
+output: html_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(resample)
+library(boot)
+theme_set(theme_bw())
+```
+
+Nesta análise, nosso objetivo é entender um pouco mais sobre a popularidade de linguagens de programação durante a semana e durante os fins de semana.
+
+# Dados
+
+Primeiramente, vamos importar nossos dados, que são uma amostra da atividade global do Github. 
+
+```{r message=FALSE}
+modificacoes = readr::read_csv(here("data/github-users-committing-filetypes.csv"))
+
+modificacoes %>% names(.)
+```
+
+Cada observação na base de dados representa um dia do ano entre 2016 e 2017, e informam quantos usuários fizeram modificações para uma determinada extensão de arquivo naquele dia.
+Vamos ver agora sobre quais extensões de arquivos temos informação, e quantas observações temos sobre cada uma.
+
+```{r}
+modificacoes %>% 
+  group_by(file_extension) %>% 
+  summarise(count = n()) %>% 
+  ggplot(aes(x = reorder(file_extension, count),
+             y = count)) +
+  geom_point(size = 2,
+             colour = "skyblue3") +
+  geom_segment(aes(x = file_extension,
+                   xend = file_extension,
+                   y = 0,
+                   yend = count),
+               colour = "skyblue3") +
+  coord_flip()
+```
+
+Podemos utilizar destas informações sobre essas extensões para analisar a popularidade de linguagens de programação, já que algumas dessas extensões estão relacionadas à linguagens.
+
+**Observação**: A base de dados contém informações sobre edições de arquivos que não são referentes a linguagens de programação, como por exempĺo, `md (markdown)` e `html`, que são linguagens de marcação. Portanto, durante a análise, os resultados referentes a este extensões não serão utilizados como base para as conclusões.
+
+Precisaremos de uma variável na base de dados que nos diga o dia da semana de cada observação.
+
+```{r}
+modificacoes = modificacoes %>% 
+  mutate(date = paste(the_year, 
+                      the_month, 
+                      month_day, 
+                      sep = "-") %>% 
+           as.Date(.)) %>% 
+  mutate(weekday = weekdays(as.Date(date))) %>% 
+  mutate(is_weekend = ifelse(weekday %in% c("sábado", 
+                                            "domingo"), 
+                             TRUE, 
+                             FALSE))
+```
+
+Como há uma grande quantidade de extensões diferentes de arquivos nos nossos dados, vamos utilizar apenas as linguagens Python e Java, que são algumas das mais utilizadas de acordo com o gráfico anterior.
+
+```{r}
+selecionadas = modificacoes %>% 
+  filter(file_extension %in% c("py", "java"))
+```
+
+Durante a análise, tentaremos responder à seguinte pergunta:
+
+* Python é mais utilizada nos fins de semana que Java?
+
+Utilizaremos inferência através de testes de hipótese para responder essa pergunta.
+
+## Testes de Hipótese.
+
+No teste de hipótese é definida uma hipótese de interesse a qual deseja-se concluir algo a partir dos dados da amostra. A partir dessa hipótese, definimos uma **hipótese nula (H0)**, que é o contrário da hipótese definida anteriormente, denominada **hipótese alternativa (H1)**. A hipótese nula é utilizada para determinar se a hipótese de interesse pode ser rejeitada ou não. Se ela puder ser rejeitada, então nossa hipótese de interesse é relevante, e se ela não puder ser rejeitada, há poucos indícios de que a hipótese de interesse seja verdadeira.
+
+Para determinar se uma hipótese pode ser rejeitada ou não, é utilizada uma medida chamada **p-valor**. O p-valor é a probabilidade da estatística estudada ser alcançada quando não rejeitamos a hipótese nula. Se essa probabilidade for muito menor que o nível de significância do teste, há poucas chances da hipótese nula ser verdadeira, e por isso podemos rejeitá-la. Ao rejeitar a hipótese nula, não estamos provando a alternativa seja verdadeira, apenas que não há evidência suficientes para rejeitá-la.
+
+Iremos, agora, responder nossa pergunta utilizando testes de hipótese.
+
+## Python é mais utilizada que Java durante o fim de semana?
+
+Vamos inicialmente, filtrar os dados para conter observações de cada linguagem escolhida apenas durante os finais de semana. Utilizaremos a média de usuários como medida de popularidade.
+
+```{r}
+py = selecionadas %>% 
+  filter(is_weekend,
+         file_extension %in% c("py"))
+
+java = selecionadas %>% 
+  filter(is_weekend,
+         file_extension %in% c("java"))
+```
+
+Desejamos verificar se python é mais utilizada que java durante o fim de semana. Então, para o teste, temos as seguintes hipóteses:
+
+* **Hipótese nula (H0)**: Python não é mais utilizada que Java no fim de semana.
+* **Hipótese alternativa (H1)**: Python é mais utilizada que Java no fim de semana.
+
+Fazendo o teste de héipóteses, temos:
+  
+```{r}
+exp.py.java = permutationTest2(data = py, statistic = mean(users), data2 = java)
+
+exp.py.java$stats %>% t()
+```
+
+Como o p-valor foi de 0.0002, abaixo do nível de confiança de 0.05, podemos rejeitar a hipótese nula, e não rejeitamos que Python é mais utilizada que Java durante os fins de semana.
+
+## Intervalos de confiança X Teste de hipótese.
+
+Utilizando intervalos de confiança, obtemos o seguinte resultado.
+
+```{r message=FALSE}
+ci.py = py %>% 
+  bootstrap(mean(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.java = java %>% 
+  bootstrap(mean(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+sds = data.frame(rbind(ci.py,
+                ci.java))
+
+sds$linguagem = c("Python", "Java")
+
+sds %>% 
+  ggplot(aes(x = linguagem,
+             ymin = X2.5.,
+             ymax = X97.5.)) +
+  geom_errorbar(width = .2)
+```
+
+Utilizando intervalos de confiança, chegamos na conclusão de que Python é mais utilizada que Java nos fins de semana, que é a mesma conclusão que chegamos utilizando testes de hipótese.

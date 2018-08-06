@@ -1,0 +1,75 @@
+---
+title: "Regressão e Romance"
+author: "Valter Lucena"
+date: "3 de agosto de 2018"
+output:
+  html_document:
+    df_print: paged
+---
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(GGally)
+library(broom)
+library(modelr)
+library(pscl)
+```
+
+# Introdução
+
+Para esta análise, continaremos a falar sobre encontros relâmpagos. Os dados que utilizaremos são os mesmos da última análise, acrescidos de uma variável `dec`, que informa se uma pessoa gostaria de reencontrar outra com quem teve um encontro relâmpago.
+
+```{r message=FALSE}
+dates = read_csv(here("data/speed-dating2.csv")) %>% 
+  mutate(dec = ifelse(test = dec == "yes",
+                      yes = 1,
+                      no = 0))
+```
+
+As variáveis disponíveis contém informações sobre as avaliações de uma pessoa sobre si mesma, e sobre a pessoa com quem conversou. Uma melhor explicação sobre essas variáveis pode ser econtrada [aqui](https://github.com/nazareno/ciencia-de-dados-1/tree/master/5-regressao/speed-dating).
+
+Durante a análise, tentaremos responder às seguintes perguntas:
+
+1. Dentre os fatores que você acha que podem ter efeito no match, quais fatores têm efeito significativo na chance de p1 decidir se encontrar novamente com p2? E como é esse efeito (positivo/negativo)?
+2. Que fatores nos dados têm mais efeito na chance de um participante querer se encontrar novamente com outro?
+
+Para responder essas perguntas utilizaremos regressão logística, utilizando a nossa nova variável `dec` como variável de resposta.
+
+# Perguntas
+
+## Dentre os fatores que você acha que podem ter efeito no match, quais fatores têm efeito significativo na chance de p1 decidir se encontrar novamente com p2? E como é esse efeito (positivo/negativo)?
+
+Na análise anterior, vimos que as variáveis `attr`, `fun` e `shar` eram boas preditoras para a variável `like`. Assumindo que p1 irá querer se reecontrar com p2 se tiver gostado dela, utilizaremos as mesmas variáveis para prever `dec`.
+
+```{r}
+modelo = glm(formula = dec ~ attr + fun + shar,
+             data = dates,
+             family = "binomial")
+
+tidy(modelo,
+     conf.int = TRUE,
+     exponentiate = TRUE)
+```
+
+Exponenciamos os valores dos coeficientes para que melhor se adequem ao modelo de regressão logística. Com isso, devemos mudar a forma de interpretar os intervalos de confiança dos coeficientes. Anteriormente, precisávamos verificar se o zero estava presente nesses intervalos. Agora, devemos procurar o número 1, já que este é o resultado de todo número elevado à 0.
+
+Observamos que nenhum dos coeficientes possui o número 1 em seu intervalo de confiança, e todos são valores positivos. Então **todas as variáveis utilizadas possuem um efeito signficativo positivo sobre a variável `dec`**.
+
+Não é possível definir um R² para o modelo, pois utilizamos regressão logística. Porém, para explicar quanto dos dados observados são explicados pelo nosso modelo, podemos utilizar um pseudo R².
+
+```{r}
+pR2(modelo)
+```
+
+Utilizando o R² de McFadden, o modelo explica 35,14% dos dados observados. 
+
+## Que fatores nos dados têm mais efeito na chance de um participante querer se encontrar novamente com outro?
+
+```{r}
+tidy(modelo,
+     conf.int = TRUE,
+     exponentiate = TRUE)
+```
+
+Observandos os valores dos coeficientes, a variável `attr` possui maior influência sobre `dec`. Ou seja, quanto mais atraente p1 achar p2, maiores as chances de p1 querer reencontrar p2. 

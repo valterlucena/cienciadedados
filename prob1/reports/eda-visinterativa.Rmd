@@ -1,0 +1,73 @@
+---
+title: "Ainda sobre séries de TV."
+author: "Valter Lucena"
+date: 2018-05-22
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+library(plotly)
+theme_set(theme_bw())
+```
+
+Ainda utilizando os dados sobre avaliações de séries no [IMDB](https://www.imdb.com), vamos agora utilizar de uma visualização interativa para tentar responder à uma das perguntas da análise anterior. Novamente, mais informações sobre esses dados estão disponíveis [neste](https://github.com/nazareno/imdb-series) repositório do professor Nazareno Andrade.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# importando os dados
+episodios = read_csv(here("data/series_from_imdb.csv"), 
+                    progress = FALSE,
+                    col_types = cols(.default = col_double(), 
+                                     series_name = col_character(), 
+                                     episode = col_character(), 
+                                     url = col_character(),
+                                     season = col_character()))
+```
+
+Continuaremos analisando apenas os dados dos episódios das seis primeiras temporadas de *American Horror Story*, *Game of Thrones* e *Homeland*.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# contém apenas informações de episódios das séries escolhidas
+series_escolhidas = episodios %>% 
+    filter(series_name %in% c("American Horror Story", 
+                              "Game of Thrones", 
+                              "Homeland"))
+```
+
+***
+
+## A avaliação da série está, de alguma forma, associada com a proporção de notas 10 que seus episódios recebem?
+
+Vamos utilizar um gráfico de pontos para verificar a distribuição das observações.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+series_escolhidas %>% 
+    mutate(`Proporção de notas 10` = r10) %>%  
+    plot_ly(x = ~series_name,
+            y = ~user_rating,
+            text = ~paste("Episódio: ", episode, '<br>Season', season),
+            color = ~`Proporção de notas 10`,
+            size = ~`Proporção de notas 10`,
+            type = 'scatter')  %>% 
+    layout(title = "Relação entre proporção de notas 10 e avaliação do usuário por episódio",
+           titlefont = list(size = 12), 
+           xaxis = list(title = "Séries",
+                        titlefont = list(size = 12)),
+           yaxis = list(title = "Avaliação do usuário",
+                        titlefont = list(size = 12)))
+
+```
+
+Neste gráfico, quanto maior e mais amarela é uma bolinha, maior é a proporção de notas 10. A partir disso, observamos que existem mais bolinhas amarelas ou quase amarelas em *Game of Thrones* que nas outras séries avaliadas. Observamos, também, que as bolinhas se concentram em faixas mais altas de avaliações se elas são mais amarelas, com exceção do [fatídico episódio de *Homeland*](https://www.imdb.com/title/tt3952170/) que conseguiu ser o mais mal avaliado da série mesmo possuindo uma alta proporção de notas 10. 
+
+Em *American Horror Story*, as avaliações variam, em sua maioria, numa pequena faixa de avaliações, com uma proporção parecida de notas 10. Já em *Homeland*, a proporção de notas 10 muda entre os episódios, e a maioria das suas avaliações variam num intervalo maior que nas outras séries analisadas. Para *Game of Thrones*, a proporção de notas 10 é majoritariamente alta, e todas as avaliações se concentram numa faixa mais alta de valores, se aproximando, inclusive, de 10.
+
+Podemos concluir então, que a avaliação da série está associada à proporção de notas 10 que seus episódios recebem, pois, quanto maior esta proporção, maior é a nota da sua avaliação. 

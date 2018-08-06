@@ -1,0 +1,173 @@
+---
+title: "Dados de commits no github."
+author: "Valter Lucena"
+date: "9 de julho de 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(resample)
+theme_set(theme_bw())
+```
+
+Os dados utilizados nesta análise são referentes à quantidade de pessoas que editaram um arquivo com determinada extensão no [Github](http://github.com), com o objetivo de entender um pouco mais sobre a popularidade das linguagens de programação.
+
+# Dados
+
+Primeiramente, vamos importar nossos dados, que são uma amostra da atividade global do github.
+
+```{r}
+commits = readr::read_csv(here("data/github-users-committing-filetypes.csv"))
+
+commits %>% names(.)
+
+```
+
+Agora, vamos ver quais são as extensões de arquivos que temos informações, e quais as mais utilizadas.
+
+```{r}
+commits %>% 
+  ggplot(aes(x = reorder(file_extension, users),
+             y = users,
+             colour = file_extension)) +
+  geom_point() +
+  coord_flip()
+```
+
+Para esta análise, consideraremos apenas as linguagens Python (.py) e Java (.java). Iremos necessitar, também, do dia da semana de cada observação. 
+
+```{r}
+escolhidos = commits %>% 
+  filter(file_extension %in% c("py", "java")) %>% 
+  mutate(date = paste(the_year, the_month, month_day, sep = "-") %>% as.Date(.)) %>% 
+  mutate(weekday = weekdays(as.Date(date))) %>% 
+  mutate(is_weekend = ifelse(weekday %in% c("sábado", "domingo"), TRUE, FALSE))
+```
+
+Após as modificações na base de dados, vamos observar como se comporta a quantidade de usuários que utilizam essas linguagens ao longo do tempo. A base de dados utilizada contém dados referentes aos anos de 2016 e 2017.
+
+```{r}
+escolhidos %>% 
+  ggplot(aes(x = date,
+             y = users,
+             color = file_extension,
+             shape = is_weekend,
+             alpha = .6)) +
+  geom_point()
+```
+
+No gráfico acima, cada observação é referente à quantidade de usuários da linguagem durante um dia desse intervalo de tempo. Observamos que Python possui mais usuários que Java, mesmo durante os fins de semana, e que esse número, um pouco depois do início de 2017, começa a decrescer para ambas as linguagens durante todos os dias da semana.
+
+# Para as linguagens escolhidas, há uma diferença significativa na sua popularidade durante a semana e durante o fim de semana? Essa diferença é grande?
+
+Vejamos, inicialmente, o número de usuários de cada linguagem durante a semana e durante o fim de semana separadamente.
+
+```{r}
+escolhidos %>% 
+  ggplot(aes(x = is_weekend,
+             y = users,
+             colour = file_extension,
+             alpha = .5)) +
+  geom_jitter() +
+  facet_grid(~ file_extension)
+```
+
+Observamos que ambas as linguagens são mais utilizadas durante a semana, sendo Python a linguagem mais utilizada, inclusive nos fins de semana. Essa diferença é alta, e pode ser notada visualmente pelo agrupamento da maioria das observações das duas linguagens no local onde as observações são referentes apenas aos dias da semana.
+
+Porém, essa conclusão é precipitada, devido ao fato de possuirmos somente uma amostra da atividade dos usuários. Então, utilizaremos uma técnica de inferência chamada de **bootstrap** para coletar informações da amostra e utilizar como base para criar nossas conclusões sobre a popularidade das linguagens. Utilizaremos a mediana da quantidade de usuários da linguagem como estatística para isso.
+
+```{r}
+boots.pyfds = escolhidos %>% 
+  filter(file_extension == "py",
+         is_weekend) %>% 
+  bootstrap(median(users),
+            R = 10000)
+
+boots.javafds = escolhidos %>% 
+  filter(file_extension == "java",
+         is_weekend) %>% 
+  bootstrap(median(users),
+            R = 10000)
+
+ci.mediana.pyfds = boots.pyfds %>% 
+  CI.percentile(probs = c(0.025, 0.975)) # 95%
+
+ci.mediana.javafds = boots.javafds %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+boots.py = escolhidos %>% 
+  filter(file_extension == "py",
+         !is_weekend) %>% 
+  bootstrap(median(users),
+            R = 10000)
+
+boots.java = escolhidos %>% 
+  filter(file_extension == "java",
+         !is_weekend) %>% 
+  bootstrap(median(users),
+            R = 10000)
+
+ci.mediana.py = boots.py %>% 
+  CI.percentile(probs = c(0.025, 0.975)) # 95%
+
+ci.mediana.java = boots.java %>% 
+  CI.percentile(probs = c(0.025, 0.975)) 
+
+medianas = data.frame(rbind(ci.mediana.py,
+                            ci.mediana.pyfds,
+                            ci.mediana.java,
+                            ci.mediana.javafds))
+medianas$medida = c("py fds",
+                    "py semana",
+                    "java fds",
+                    "java semana")
+
+medianas %>% 
+  ggplot(aes(x = medida,
+             ymin = X2.5.,
+             ymax = X97.5.)) +
+  geom_errorbar(width = .095)
+
+```
+
+Como podemos observar, a conclusão que chegamos anteriormente mantém-se a mesma aqui. As duas linguagens são mais utilizadas durante os dias da semana, com Python possuindo um maior número de usuários. E sim, há uma diferença significativa na popularidade das linguagens durante a semana e o fim de semana, vendo que o intervalo para os dias da semana de ambas as linguagens se econtra bem acima do referente ao fim de semana.
+
+## Existe uma diferença significativa entre a popularidade das duas linguagens nos fins de semana?
+
+Ainda utilizando boostrap, vamos utilizar o desvio padrão para analisar a diferença entre a popularidade das linguagens durante o fim de semana.
+
+```{r}
+
+py.fds = escolhidos %>% 
+  filter(file_extension == "py",
+         is_weekend)
+
+java.fds = escolhidos %>% 
+  filter(file_extension == "java",
+         is_weekend)
+
+sd.ci.pyfds = py.fds %>% 
+  bootstrap(sd(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+sd.ci.javafds = java.fds %>% 
+  bootstrap(sd(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+sds = data.frame(rbind(sd.ci.pyfds,
+                sd.ci.javafds))
+
+sds$medida = c("py fds", "java fds")
+
+sds %>% 
+  ggplot(aes(x = medida,
+             ymin = X2.5.,
+             ymax = X97.5.)) +
+  geom_errorbar(width = .2)
+
+```
+
+Como os intervalos se interceptam, nesta situação, não é possível dizer se há uma diferença significativa entre o uso dessas duas linguagens durante o fim de semana.

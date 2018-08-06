@@ -1,0 +1,119 @@
+---
+title: "Tipos de filmes de Emma Watson."
+author: "Valter Lucena"
+date: "24 de junho de 2018"
+output:
+  html_document: null
+  df_print: paged
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(here)
+library(cluster)
+library(plotly)
+library(ggdendro)
+
+source(here::here("code/lib.R"))
+source(here::here("code/plota_solucoes_hclust.R"))
+theme_set(theme_bw())
+
+knitr::opts_chunk$set(tidy = FALSE,
+                      fig.width = 6,
+                      fig.height = 5,
+                      echo = TRUE)
+```
+
+
+A atriz *Emma Watson* ficou conhecida mundialmente ao interpretar a personagem **Hermione Granger** nos filmes da saga *Harry Potter*. A fama alcançada pelo sucesso da saga possibilitou que a atriz atuasse em diversos outros filmes. Mesmo que nem todos esses filmes tenham feito tanto sucesso como a saga *Harry Potter*, eles permitiram que a atriz mostrasse que consegue interpretar outros papéis. 
+
+O site 
+[Rotten Tomatoes](https://www.rottentomatoes.com) reúne informações sobre as avaliações e bilheteria dos filmes onde diversos autores atuaram, incluindo os de Emma. A partir dessas informações, vamos classificar os tipos de filmes da atriz Emma Watson.
+
+```{r message=FALSE}
+import_data(celebridade = "emma_watson")
+filmes = read_imported_data()
+```
+
+Observemos, agora, sobre o que se tratam os dados que reunimos.
+
+```{r message=FALSE}
+names(filmes)
+```
+
+* `avaliacao`: a nota que o *Rotten* atribui a um filme.
+* `filme`: o título do filme.
+* `papel`: o papel representado.
+* `bilheteria`: o valor arrecadado pelo filme.
+* `ano`: o ano de lançamento do filme.
+
+Uma visualização dos dados permite que identifiquemos determinadas curiosidades que não conseguiríamos observando apenas os valores na tabela com todas as observações. Portanto, vamos observar, através de um *scatter plot*, como se relacionam as variávies `avaliacao` e `bilheteria`. Cada ponto no gráfico refere-se à um filme, e mais informações sobre o filme podem ser vistas passando o mouse sobre eles. 
+
+```{r message = FALSE}
+plot_ly(data = filmes,
+        x = filmes$avaliacao,
+        y = filmes$bilheteria,
+        text = ~paste("Filme: ", filme,
+                      "<br>Papel: ", papel ),
+        type = 'scatter') %>% 
+    layout(title = "",
+        xaxis = list(title = "Avaliação",
+                     titlefont = list(size = 12)),
+        yaxis = list(title = "Bilheteria (milhões de dólares)",
+                     titlefont = list(size = 12)))
+```
+
+Podemos observar, a partir do gráfico, que alguns dos filmes possuem valores parecidos para avaliação e bilheteria. Vamos usar isso em nosso favor e agrupar os filmes que possuem características semalhantes para determinar os tipos de filmes da atriz.
+
+Agruparemos esses dados utilizando o método **euclidiano**, que agrupa dados calculando as distâncias entre os pontos do gráfico, onde pontos muitos próximos serão colocados no mesmo grupo.
+
+Utilizando um dendrograma, podemos visualizar em quantos grupos podemos separar os filmes.
+
+```{r warning = FALSE}
+agrupamento_h_2d = filmes %>% 
+    column_to_rownames("filme") %>%
+    select(avaliacao, bilheteria) %>%
+    dist(method = "euclidean") %>% 
+    hclust(method = "ward.D")
+
+ggdendrogram(agrupamento_h_2d, rotate = TRUE)
+```
+
+Neste dendrograma, observamos que o algoritmo inicia agrupando dois filmes, juntando outro filme neste agrupamento, e assim por diante. Antes do fim do algoritmo, podemos observar que existem 3 ramos de filmes agrupados. A partir disto, poderíamos assumir que 3 grupos seriam bons para classificar os filmes.
+
+Como os valores de bilheteria estão na ordem de milhões de dólares, e as avaliações vão no máximo até uma centena, vamos utilizar a escala logarítmica na bilheteria a fim de diminuir a diferença entre as escalas para verificar se 3 seria um bom número de grupos.
+
+```{r warning=FALSE}
+agrupamento_h_2d = filmes %>% 
+    mutate(bilheteria = log10(bilheteria)) %>% 
+    mutate_at(vars("avaliacao", "bilheteria"), funs(scale)) %>% 
+    column_to_rownames("filme") %>% 
+    select("avaliacao", "bilheteria") %>% 
+    dist(method = "euclidean") %>% 
+    hclust(method = "ward.D")
+
+ggdendrogram(agrupamento_h_2d, rotate = TRUE)
+```
+
+Em escala logarítmica, é possível observar que existem 4 ramos antes do algortimo terminar. Num *scatter plot*:
+
+```{r}
+filmes2 = filmes %>% 
+  mutate(bilheteria = log10(bilheteria))
+
+plota_hclusts_2d(agrupamento_h_2d, 
+                 filmes2, 
+                 c("avaliacao", "bilheteria"), 
+                 linkage_method = "ward.D", 
+                 ks = 1:4) + 
+  scale_y_log10()
+```
+
+Percebemos aqui que, utilizando 3 grupos, as observações do grupo azul visualmente ainda estão um pouco distantes, e que com 4 grupos a divisão faz mais sentido, já que o novo grupo rosa encontra-se numa faixa diferente de avaliação que os do grupo azul. 
+
+Assim, podemos dividir os filmes da atriz *Emma Watson* em 4 tipos diferentes:
+
+* **Hits**: os filmes deste tipo, identificados pela cor laranja, são os filmes que obtiveram sucesso tanto em crítica como em bilheteria. Neste grupo estão inclusos os filmes da saga *Harry Potter*, e o *live action* do clássico infatil da *Disney*, *Beauty and the Beast*, onde Emma foi protagonista.
+* **Cults**: identificados pela cor rosa, aqui se encontram os filmes que não obtiveram tanto sucesso de bilheteria, mas agradaram os críticos. Este grupo contém o filme *The perks of being a wallflower*, adaptação de um livro do mesmo nome, que ficou popular entre os cinéfilos.
+* **Flat**: o grupo roxo é formado por filmes que não agradaram muito os críticos, com uma bilheteria morna. O filme *The Bling Ring*, que conta a história de uma gangue de adolescentes de classe média que furtavam a casa de celebridades, pertence à este grupo. 
+* **Flop**: O pontinho verde solitário no gráfico representa um filme que não agradou muito o público, e não agradou em nada os críticos. 

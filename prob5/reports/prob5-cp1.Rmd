@@ -1,0 +1,180 @@
+---
+title: "Regressão e romance."
+author: "Valter Lucena"
+date: "26 de julho de 2018"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(GGally)
+library(broom)
+library(modelr)
+```
+
+# Introdução
+
+Para esta análise, falaremos sobre encontros relâmpagos. Conhecida como *speed dating*, esta "modalidade" de econtros consiste em juntar várias pessoas em um local e separá-las em casais, para que se conheçam e conversem durante uma quantidade curta de tempo. Após este tempo acabar, os casais são refeitos, até que todos tenham se conhecido. 
+
+Os dados que utilizaremos, possuem informações sobre encontros relâmpagos de 4 minutos envolvendo 310 jovens americanos. Após cada encontro, os participantes preenchiam uma ficha avaliando os participantes com quem conversaram.
+
+```{r message=FALSE}
+dates = read_csv(here("data/speed-dating.csv"))
+```
+
+Cada linha nos dados representa a avaliação de algum dos participantes sobre cada encontro que teve. 
+
+As variáveis disponíveis contém informações sobre as avaliações de uma pessoa sobre si mesma, e sobre a pessoa com quem conversou. Uma melhor explicação sobre essas variáveis pode ser econtrada [aqui](https://github.com/nazareno/ciencia-de-dados-1/tree/master/5-regressao/speed-dating).
+
+Durante a análise, procuraremos descobrir qual dessas variáveis mais influenciam na atração que uma pessoa sente pela outra.
+
+# Perguntas
+
+Considerando apenas as variáveis relacionadas à avaliação de uma pessoa sobre as que ela encontrou, vamos examinar as associações entre elas. Uma forma de quantificar essas associações é utilizando a correlação linear entre essas variáveis. A correlação linear mede a relação linear entre elas e indica a força e a direção desse relacionamento. Essa medida é um valor entre -1 e 1 e é classificada da seguinte forma:
+
+* A associação é dita fraca se o módulo de seu valor aproxima-se de 0, e forte quando aproxima-se de 1.
+* Se o valor da correlação é negativo, os valores de uma variável diminuem quando os da outra aumentam, e, se for positivo, aumentam quando os valores da outra variável também aumentam.
+
+```{r warning=FALSE}
+dates %>% 
+  select(attr,
+         sinc,
+         intel,
+         fun,
+         amb,
+         shar,
+         like) %>% 
+  ggpairs(progress = FALSE)
+```
+
+Podemos observar que há correlação entre todas as variáveis, umas mais forte que outras. Na variável `like`, que indica o quanto uma pessoa gostou da outra, podemos observar que ela se associa mais fortemente com `attr`, `fun` e `shar`, que representam, respectivamente, o quanto a pessoa que estava avaliando achou atraente, divertida e com interesses em comum todas as pessoas com quem se encontrou.
+
+## Que fatores influenciam na decisão sobre gostar de uma pessoa?
+
+Podemos utilizar de um modelo de regressão linear para analisar melhor como cada uma dessas variáveis influencia a variável `like`.
+
+```{r}
+modelo = lm(like ~ attr + fun + shar, dates)
+tidy(modelo, conf.int = TRUE)
+```
+
+Os resultados da regressão podem ser encontrados na tabela acima. Dela, podemos ressaltar:
+
+* `estimate`: indica o valor do coeficiente da variável no modelo, ou seja, o efeito dela na variável resposta
+* `p-value`: indica a significância da variável para explicar a variável resposta
+* `conf-low e conf-high`: os extremos do intervalo de confiança para o coeficiente. Se o zero pertecer ao intervalo, a variável não explica a variável resposta.
+
+O modelo resultante é da forma $like = 0.85 + 0.34*attr + 0.27*fun + 0.26*shar$. Cada coeficiente indica o efeito de aumentar uma unidade da variável na variável de resposta. Assim, 
+
+* `attr` aumenta em, aproximadamente, 0.34 pontos o valor de `like`
+* `fun` aumenta em, aproximadamente, 0.27 pontos o valor de `like`
+* `shar` aumenta em, aproximadamente, 0.26 pontos o valor de `like`
+
+Como o p-valor é baixo, e o zero não está em nenhum dos intervalo de confiança, as variáveis `attr`, `fun` e `shar` são significativas para explicar a variável `like`. A variável `attr` causa um maior efeito em `like`, indicando que uma pessoa gostará mais de alguém que conversou se achar este alguém atraente. Esta conclusão difere da que chegaríamos considerando apenas os valores de correlação linear calculados anteriormente. Estes valores indicavam que a variável `like` era mais influenciada por `fun`. 
+
+### Quanto da variável `like` é explicada por essas variáveis?
+
+```{r}
+glance(modelo)
+```
+
+O valor do R² explica o quanto o modelo consegue explicar os dados observados. Como esse valor é igual à 0.6409, o nosso modelo explica 64,09% dos dados observados, ou seja, a variação de `attr`, `fun` e `shar` explicam aproximadamente 64,09% da variação de `like`.
+
+### Visualizando o modelo
+
+```{r}
+vis = dates %>% 
+  na.omit() %>% 
+  data_grid(attr = seq_range(attr, 10),
+            fun = seq_range(fun, 4),
+            shar = seq_range(shar, 3)) %>% 
+  add_predictions(modelo)
+
+vis %>% 
+  ggplot(aes(x = attr,
+             y = pred)) +
+  geom_line(aes(group = fun,
+                colour = fun)) +
+  facet_grid(. ~ shar)
+```
+
+
+Entretando, o modelo utilizado é generalista, e, portanto, a conclusão que chegamos utilizando ele como base também é. Nossa base de dados possui avaliações de pessoas do sexo feminino e masculino, e é plausível supor que os sexos possuam critérios diferentes para gostar de alguém. Ainda utilizando das mesmas variáveis do modelo generalista, vejamos como se comporta a influência dessas mesmas variáveis para cada sexo.
+
+### Para os homens
+
+```{r}
+homens = dates %>% 
+  filter(gender == 1) %>% 
+  select(like, attr, fun, shar) %>% 
+  na.omit()
+
+modelo_homens = lm(like ~ attr + fun + shar, homens)
+tidy(modelo_homens, conf.int = TRUE)
+```
+
+Para os homens, o modelo é da forma $like = 0.97 + 0.35*attr + 0.26*fun + 0.24*shar$, novamente com todas as variáveis significativas, sendo a atraência o fator mais importante no quanto um homem gostará da pessoa que conversou. Os valores não diferem muito dos do modelo generalista.
+
+```{r}
+glance(modelo_homens)
+```
+
+O modelo considerando apenas homens explica 60.35% da variação de `like`. Visualizando o modelo,
+
+```{r}
+vis.h = homens %>% 
+  na.omit() %>% 
+  data_grid(attr = seq_range(attr, 10),
+            fun = seq_range(fun, 4),
+            shar = seq_range(shar, 3)) %>% 
+  add_predictions(modelo_homens)
+
+vis.h %>% 
+  ggplot(aes(x = attr,
+             y = pred)) +
+  geom_line(aes(group = fun,
+                colour = fun)) +
+  facet_grid(. ~ shar)
+```
+
+### Para as mulheres
+
+```{r}
+mulheres = dates %>% 
+  filter(gender == 0) %>% 
+  select(like, attr, fun, shar) %>% 
+  na.omit()
+
+modelo_mulheres = lm(like ~ attr + fun + shar, mulheres)
+tidy(modelo_mulheres, conf.int = TRUE)
+```
+
+Já para as mulheres, o modelo é da forma $like = 0.75 + 0.32*attr + 0.29*fun + 0.27*shar$, novamente com todas as variáveis significativas, sendo a atraência o fator mais importante no quanto uma mulher gostará da pessoa que conversou. Os valores não diferem muito dos do modelo generalista, mas a diferença do valor da atração para as outras variáveis é menor do que a do modelo generalista e do modelo considerando apenas homens.
+
+```{r}
+glance(modelo_mulheres)
+```
+
+O modelo considerando apenas mulheres explica 66,72% da variação da variável `like`. Este modelo explica mais dos dados observados que os anteriores. Visualizando o modelo,
+
+```{r}
+vis.m = mulheres %>% 
+  na.omit() %>% 
+  data_grid(attr = seq_range(attr, 10),
+            fun = seq_range(fun, 4),
+            shar = seq_range(shar, 3)) %>% 
+  add_predictions(modelo_mulheres)
+
+vis.m %>% 
+  ggplot(aes(x = attr,
+             y = pred)) +
+  geom_line(aes(group = fun,
+                colour = fun)) +
+  facet_grid(. ~ shar)
+```
+
+Com isso, podemos concluir que a atraência continua sendo o fator mais influente em quanto ambos os sexos gostaram de outra pessoa que conversaram, mas que esse fator é mais influente para homens. Para mulheres, a atraência é também o fator mais influente, mas a diferença entre a influência da atraência e a dos outros fatores é menor do que no modelo considerando ambos os sexos e apenas homens.

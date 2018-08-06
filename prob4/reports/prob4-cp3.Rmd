@@ -1,0 +1,261 @@
+---
+title: "Análise sobre a popularidade de algumas linguagens de programação."
+author: "Valter Lucena"
+date: "13 de julho de 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(resample)
+library(boot)
+theme_set(theme_bw())
+```
+
+Nesta análise, nosso objetivo é entender um pouco mais sobre a popularidade de linguagens de programação durante a semana e durante os fins de semana.
+
+# Dados
+
+Primeiramente, vamos importar nossos dados, que são uma amostra da atividade global do Github. 
+
+```{r message=FALSE}
+modificacoes = readr::read_csv(here("data/github-users-committing-filetypes.csv"))
+
+modificacoes %>% names(.)
+```
+
+Cada observação na base de dados representa um dia do ano entre 2016 e 2017, e informam quantos usuários fizeram modificações para uma determinada extensão de arquivo naquele dia.
+Vamos ver agora sobre quais extensões de arquivos temos informação, e quantas observações temos sobre cada uma.
+
+```{r}
+modificacoes %>% 
+  group_by(file_extension) %>% 
+  summarise(count = n()) %>% 
+  ggplot(aes(x = reorder(file_extension, count),
+             y = count)) +
+  geom_point(size = 2,
+             colour = "skyblue3") +
+  geom_segment(aes(x = file_extension,
+                   xend = file_extension,
+                   y = 0,
+                   yend = count),
+               colour = "skyblue3") +
+  coord_flip()
+```
+
+Podemos utilizar destas informações sobre essas extensões para analisar a popularidade de linguagens de programação, já que algumas dessas extensões estão relacionadas à linguagens.
+
+**Observação**: A base de dados contém informações sobre edições de arquivos que não são referentes a linguagens de programação, como por exempĺo, `md (markdown)` e `html`, que são linguagens de marcação. Portanto, durante a análise, os resultados referentes a este extensões não serão utilizados como base para as conclusões.
+
+Precisaremos de uma variável na base de dados que nos diga o dia da semana de cada observação.
+
+```{r}
+modificacoes = modificacoes %>% 
+  mutate(date = paste(the_year, 
+                      the_month, 
+                      month_day, 
+                      sep = "-") %>% 
+           as.Date(.)) %>% 
+  mutate(weekday = weekdays(as.Date(date))) %>% 
+  mutate(is_weekend = ifelse(weekday %in% c("sábado", 
+                                            "domingo"), 
+                             TRUE, 
+                             FALSE))
+```
+
+# Perguntas
+
+Durante a análise tentaremos responder às seguintes perguntas:
+
+1. Quais as linguagens mais populares durante a época de festas juninas?
+  * Mudando a medida de popularidade, a conclusão se mantém a mesma?
+2. Se considerarmos que durante o fim de semana os desenvolvedores geralmente dedicam-se a projetos pessoais em outras linguagens para desenvolvimento de habilidades, podemos utilizar o mesmo raciocínio para os períodos de férias?
+
+## Quais as linguagens mais populares durante a época de festas juninas?
+
+Para algumas regiões do Brasil, principalmente para o nordeste, às festividades do mês de junho mudam um pouco da rotina das pessoas. Sabendo que os dados que possuímos são sobre modificações feitas em todo o mundo, podemos supor que algumas dessas modificações foram realizadas também por aqui. Vejamos, então, qual a linguagem mais popular durante o mês de junho.
+
+Para isso, iremos considerar apenas as modificações do mês de junho do ano de 2016 para as linguagens Python, Java, C e C++, algumas das mais utilizadas de acordo com o gráfico anterior, e utilizaremos a média de usuários como medida de popularidade.
+
+```{r}
+modificacoes.linguagens = modificacoes %>%
+  filter(file_extension %in% c("py", "java", "c", "cpp"),
+         the_month == 6,
+         the_year == 2016)
+```
+
+Como possuímos apenas uma amostra da atividade global do Github, utilizaremos uma técnica de inferência chamada de **bootstrap** para coletar informações da amostra e utilizar como base para criar nossas conclusões sobre a popularidade das linguagens durante o mês de junho de 2016. Utilizaremos a média da quantidade de usuários da linguagem como estatística para isso.
+
+```{r warning=FALSE}
+ci.mean.py = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("py")) %>% 
+  bootstrap(mean(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.mean.java = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("java")) %>% 
+  bootstrap(mean(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.mean.c = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("c")) %>% 
+  bootstrap(mean(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.mean.cpp = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("cpp")) %>% 
+  bootstrap(mean(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+mean.df = data.frame(rbind(ci.mean.py,
+                           ci.mean.java,
+                           ci.mean.cpp,
+                           ci.mean.c))
+
+mean.df$extension = c("py",
+                      "java",
+                      "cpp",
+                      "c")
+
+mean.df %>% 
+  ggplot(aes(x = extension,
+             ymin = X2.5.,
+             ymax = X97.5.)) +
+  geom_errorbar(width = .2)
+
+```
+
+Aqui, podemos observar que não há interseção entre nenhum dos intervalos de confiança para a média de usuários dessas linguagens durante as épocas juninas. Portanto, podemos afirmar que Python é a linguagem mais utilizada durante junho de 2016.
+
+### Mudando a medida de popularidade, a conclusão se mantém a mesma?
+
+Vamos verificar se utilizando a mediana chegamos nos mesmos resultados.
+
+```{r warning=FALSE}
+ci.median.py = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("py")) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.median.java = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("java")) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.median.c = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("c")) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.median.cpp = modificacoes.linguagens %>% 
+  filter(file_extension %in% c("cpp")) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+median.df = data.frame(rbind(ci.median.py,
+                           ci.median.java,
+                           ci.median.cpp,
+                           ci.median.c))
+
+median.df$extension = c("py",
+                      "java",
+                      "cpp",
+                      "c")
+
+median.df %>% 
+  ggplot(aes(x = extension,
+             ymin = X2.5.,
+             ymax = X97.5.)) +
+  geom_errorbar(width = .2)
+```
+
+Utilizando a mediana da quantidade de usuários da linguagem como medida de popularidade, mantemos a conclusão de que Python foi a linguagem mais utilizada durante o mês de junho de 2016.
+
+## Se considerarmos que durante o fim de semana os desenvolvedores geralmente dedicam-se a projetos pessoais em outras linguagens para desenvolvimento de habilidades, podemos utilizar o mesmo raciocínio para os períodos de férias?
+
+Para responder essa pergunta, utilizaremos apenas os dados referentes às linguagens Ruby, Go e Swift. Essas linguagens estão se popularizando, mas ainda não são tão utilizadas como as linguagens citadas no exercício anterior. Por isso, é possível supôr que essas pessoas podem utilizar de períodos como férias ou finais de semana para se dedicar um pouco mais ao aprendizado dessas linguagens, sem atrapalhar as atividades durante o resto dos dias do ano. 
+
+Primeiramente, vamos traçar uma linha do tempo da quantidade de usuários que utilizaram essas linguagens.
+
+```{r}
+modificacoes.outras = modificacoes %>% 
+  filter(file_extension %in% c("rb", "go", "swift")) %>% 
+  mutate(ferias = ifelse(the_month %in% c(1, 12),
+                         "ferias",
+                         "normal"))
+
+modificacoes.outras %>% 
+  filter(the_month %in% c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)) %>% 
+  group_by(file_extension, the_month) %>% 
+  summarise(media = mean(users)) %>% 
+  ggplot(aes(x = the_month,
+             y = media,
+             colour = file_extension)) +
+  geom_line()
+```
+
+Utilizando a média de usuários como medida de popularidade, vemos que a utilização das linguagens diminui, mas aumenta um pouco para Swift. Antes de chegarmos numa conclusão, vamos observar o que acontece com os intervalos de confiança para a média de usuários nos períodos normais e nos de férias. Consideraremos os meses de dezembro e janeiro como período de férias.
+
+```{r}
+ci.normal.go = modificacoes.outras %>% 
+  filter(file_extension %in% c("go"),
+         the_month %in% c(2, 3, 4, 5, 6, 7, 8, 9, 10, 11)) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.ferias.go = modificacoes.outras %>% 
+  filter(file_extension %in% c("go"),
+         the_month %in% c(1, 12)) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.normal.rb = modificacoes.outras %>% 
+  filter(file_extension %in% c("rb"),
+         the_month %in% c(2, 3, 4, 5, 6, 7, 8, 9, 10, 11)) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.ferias.rb = modificacoes.outras %>% 
+  filter(file_extension %in% c("rb"),
+         the_month %in% c(1, 12)) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.normal.swift = modificacoes.outras %>% 
+  filter(file_extension %in% c("swift"),
+         the_month %in% c(2, 3, 4, 5, 6, 7, 8, 9, 10, 11)) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+ci.ferias.swift = modificacoes.outras %>% 
+  filter(file_extension %in% c("swift"),
+         the_month %in% c(1, 12)) %>% 
+  bootstrap(median(users)) %>% 
+  CI.percentile(probs = c(0.025, 0.975))
+
+outras.df = data.frame(rbind(ci.ferias.go,
+                             ci.normal.go,
+                             ci.ferias.rb,
+                             ci.normal.rb,
+                             ci.ferias.swift,
+                             ci.normal.swift))
+
+outras.df$extension = c("go ferias",
+                        "go",
+                        "rb ferias",
+                        "rb",
+                        "swift ferias",
+                        "swift")
+
+outras.df %>% 
+  ggplot(aes(x = extension,
+             ymin = X2.5.,
+             ymax = X97.5.)) +
+  geom_errorbar(width = .2)
+
+```
+
+Percebemos que, para uma mesma linguagem, há interseção nos intervalos de confiança para a média da quantidade de usuários no período de férias e no resto dos dias do ano. Então, nada podemos afirmar sobre alguma mudança da popularidade do uso dessas linguagens nessas épocas do ano.

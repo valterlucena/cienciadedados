@@ -1,0 +1,257 @@
+---
+title: "Dados sobre séries de TV."
+author: "Valter Lucena"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+theme_set(theme_bw())
+```
+
+Esta análise será realizada utilizando dados sobre avaliações de espisódios de séries presentes no [IMDB](https://www.imdb.com). Mais informações sobre esses dados podem ser encontradas [neste](https://github.com/nazareno/imdb-series) repositório do professor Nazareno Andrade.
+
+# Escolha das séries e entendimento dos dados
+
+Primeiramente, vamos importar os dados e selecionar as séries que serão analisadas.
+
+```{r}
+episodes = read_csv(here("data/series_from_imdb.csv"), 
+                    progress = FALSE,
+                    col_types = cols(.default = col_double(), 
+                                     series_name = col_character(), 
+                                     episode = col_character(), 
+                                     url = col_character(),
+                                     season = col_character()))
+```
+
+Agora, vamos ver sobre quais séries a base de dados possui informações.
+
+```{r}
+episodes %>%
+    arrange(series_name) %>% 
+    select(series_name) %>%
+    unique()
+```
+
+Dadas as séries acima, resolvi escolher séries que possuem uma quantidade semelhante de temporadas. As séries escolhidas foram:
+
+* *American Horror Story*
+* *Breaking Bad*
+* *Game of Thrones*
+
+Até a época onde esses dados foram coletados (julho de 2017), a base de dados possui informações sobre os episódios das 5 ou 6 primeiras temporadas das séries escolhidas.
+
+Reduziremos, então, a base de dados original para uma que contenha apenas informações destas séries.
+
+```{r}
+escolhidas = episodes %>% 
+    filter(series_name %in% c("American Horror Story", 
+                              "Breaking Bad", 
+                              "Game of Thrones"))
+```
+
+Antes de começar a analisar as séries, vamos tentar entender o comportamento dos dados que possuímos. Os gráficos são uma boa forma de fazer isso, pois possibilitam a identificação visual de certos aspectos que seriam mais difíceis de perceber analisando cada linha da nossa base de dados.
+
+Para isso, iniciaremos plotando um gráfico de pontos mostrando a avalição geral dos episódios da série, onde cada ponto representa a nota de um determinado episódio de uma série.
+
+```{r}
+escolhidas %>% 
+    mutate (Série = series_name) %>% 
+    ggplot(aes(x = Série, 
+               y = user_rating, 
+               color = Série)) +
+    geom_jitter(alpha = 0.7) +
+    xlab("Série") +
+    ylab("Nota do episódio") +
+    ggtitle("Avaliação geral dos episódios ao longo da série")
+```
+
+A partir do gráfico, podemos observar que os pontos para as notas dos episódios de *American Horror Story* estão mais abaixo no gráfico do que os para *Breaking Bad* e *Game of Thrones*, e que, nessas duas, os pontos se distribuem geralmente na mesma região, um pouco mais acima. Porém, antes de chegar a qualquer conclusão, vamos examinar essas informações mais minuciosamente.
+
+# Perguntas
+
+## Qual das séries escolhidas é a mais bem avaliada no IMDB? A diferença é grande? Pequena?
+
+Para ajudar a responder esta pergunta, vamos visualizar a distribuição das notas a partir de outro gráfico, o *box-plot*. Este tipo de gráfico permite observar a distribuição e valores discrepantes dos dados, e nele estão representadas as seguintes medidas estatísticas:
+
+* **Valor mínimo e máximo** - A linha horizontal superior representa o valor máximo, e a inferior, o valor mínimo.
+* **IQR (*Interquartile Range - Amplitude Interquartil*)** - A altura do retângulo entre as duas linhas horizontais representa a amplitude interquartil, que avalia a dispersão dos dados em torno da medida central.
+* **Mediana** - A medida central citada anteriormente. Representada pela linha horizontal que divide o retângulo em duas partes. Acima desta linha, até a linha horizontal superior, encontram-se 50% das observações cujos valores são maiores que a mediana, e abaixo dela, até a linha horizontal inferior, os 50% cujos valores são menores. 
+* **Valores discrepantes** - Nem sempre aparecem no gráfico, e indicam valores atípicos, extremos ou *outliers*.
+
+```{r}
+escolhidas %>% 
+    mutate(Série = series_name) %>% 
+    ggplot(aes(x = Série, 
+               y = user_rating, 
+               color = Série)) +
+    geom_boxplot() +
+    stat_boxplot(geom = 'errorbar') +
+    ylab("Avaliações dos usuários") +
+    ggtitle("Distribuição das avaliações dos espisódios por série")
+```
+
+Como podemos observar, as notas de metade dos episódios de *Breaking Bad* e *Game of Thrones* são maiores que a maioria das notas dos episódios de *American Horror Story*. Assim, é possível concluir que *American Horror Story* não é a série mais bem avaliada entre as escolhidas, e que *Breaking Bad* e *Game of Thrones* são boas candidatas para este título.
+
+Examinemos, agora, algumas estatísticas sobre as avaliações dos episódios dessas duas séries. 
+
+```{r}
+# Reúne algumas estatísticas sobre as avaliações dos episódios.
+escolhidas %>% 
+    filter(!(series_name == "American Horror Story")) %>% 
+    group_by(series_name) %>% 
+    summarise(Máximo = max(user_rating),
+              Mínimo = min(user_rating),
+              Mediana = median(user_rating),
+              Média = mean(user_rating),
+              Desvio_Padrão = sd(user_rating))
+
+```
+
+Na tabela, podemos ver que o valor da média para *Game of Thrones* é maior que a de *Breaking Bad*. Porém, a média é facilmente afetada por valores extremos, e a diferença entre o valor máximo e mínimo de *Breaking Bad* é maior que a de *Game of Thrones*. Mesmo assim, a diferença entre essas duas médias é muito pequena, de 0.05. Por isso, resolvi não utilizar a média como critério de avaliação para a série mais bem avaliada.
+
+As informações que conseguimos a partir destes valores foram:
+
+1. O episódio com pior avaliação de *Game of Thrones* possui uma avaliação melhor do que o episódio com pior avaliação de *Breaking Bad*.
+2. A mediana de *Game of Thrones* é maior, porém por uma diferença de 0.05.
+3. O desvio padrão de *Breaking Bad* é maior que o de *Game of Thrones*. Isto significa que as notas das avaliações dos episódios de *Game of Thrones* se concentram mais próximas de um valor e não variam tanto como as de *Breaking Bad*.
+
+Nossa base de dados possui informações sobre a proporção de usuários que avaliaram o episódio de uma série com uma nota específica, que vai de 1 à 10. Juntamente com as informações conseguidas anteriormente, a série mais bem avaliada será a que também possui a menor proporção de usuários que avaliaram seus episódios com nota mínima, e a maior proporção de usuários que avaliaram seus episódios com nota máxima. Vamos analisar isto graficamente.
+
+```{r}
+# Mostra a proporção de episódios avaliados com nota 1
+escolhidas %>%
+    filter(!(series_name == "American Horror Story")) %>% 
+    mutate(Séries = series_name) %>% 
+    ggplot(aes(x = series_ep,
+               y = (r1) * 100,
+               color = Séries,
+               fill = Séries)) +
+    geom_violin(color = "black",
+                alpha = .7) +
+    facet_wrap(~ Séries) +
+    xlab("Número do Episódio") +
+    ylab("Usuários (%) ") +
+    ggtitle("Proporção de episódio que foram avaliados com nota mínima (1)")
+
+# Mostra a proporção de episódios avaliados com nota 10
+escolhidas %>% 
+    filter(!(series_name == "American Horror Story")) %>% 
+    mutate(Séries = series_name) %>% 
+    ggplot(aes(x = series_ep,
+               y = (r10) * 100,
+               color = Séries,
+               fill = Séries)) +
+    geom_violin(color = "black",
+                alpha = .7) +
+    facet_wrap(~ Séries) +
+    xlab("Número do Episódio") +
+    ylab("Usuários (%)") +
+    ggtitle("Proporção de episódio que foram avaliados com nota máxima (10)")
+```
+
+A partir desses gráficos, obtemos as seguintes informações:
+
+1. A proporção de usuários que avaliariam com nota 1 os episódios de *Breaking Bad* se concentra na faixa de 3% a 6%, e a dos que avaliaram com nota 10 se concentra ao redor dos 40%.
+2. A proporção de usuários que avaliaram com nota 1 os episódios de *Game of Thrones* se concentra na faixa abaixo de 3%, e a dos que avaliaram com nota 10 se concentra na faixa dos 40% à 50%.
+
+Utilizando das estatísticas analisadas anteriormente, e dos resultados que foram obtidos no último gráfico, podemos concluir que, entre as séries escolhidas, *Game of Thrones* é a série mais bem avaliada no IMDB.
+
+## A avaliação muda de acordo com as temporadas da série?
+
+```{r}
+escolhidas %>% 
+    mutate(Série = series_name) %>% 
+    ggplot(aes(x = season,
+               y = user_rating,
+               fill = Série)) +
+    geom_col(position = position_identity()) +
+    facet_wrap(~ Série) +
+    xlab("Temporada") +
+    ylab("Avaliações dos usuários") +
+    ggtitle("Avaliações dos usuários para as temporadas de cada série")
+```
+
+Como podemos observar pelo gráfico de colunas, as avaliações das três séries mudam de acordo com a temporada, mas ainda mantêm-se num intervalo de valores parecidos. *Game of Thrones* mantém suas avaliações sempre em valores próximos, em *American Horror Story* esses valores variam mais, porém não num intervalo muito grande, e, em *Breaking Bad* a avaliação aumenta.
+
+## Qual das séries escolhidas tem episódios de qualidade mais irregular segundo o IMDB? A diferença é grande? Pequena?
+
+Vamos utilizar um gráfico de linhas para visualizar as avaliações dos episódios das séries.
+
+```{r}
+# American Horror Story
+escolhidas %>% 
+    filter(series_name == "American Horror Story") %>% 
+    mutate(Série = series_name) %>% 
+    ggplot(aes(x = series_ep,
+               y = user_rating)) +
+    geom_line(color = "salmon") +
+    xlab("Episódio") +
+    ylab("Avaliação dos usuários") +
+    ggtitle("Avaliações dos usários para cada episódio de American Horror Story")
+
+# Breaking Bad
+escolhidas %>% 
+    filter(series_name == "Breaking Bad") %>% 
+    mutate(Série = series_name) %>% 
+    ggplot(aes(x = series_ep,
+               y = user_rating)) +
+    geom_line(color = "limegreen") +
+    xlab("Episódio") +
+    ylab("Avaliação dos usuários") +
+    ggtitle("Avaliações dos usários para cada episódio de Breaking Bad")
+
+# Game of Thrones
+escolhidas %>% 
+    filter(series_name == "Game of Thrones") %>% 
+    mutate(Série = series_name) %>% 
+    ggplot(aes(x = series_ep,
+               y = user_rating)) +
+    geom_line(color = "blue",
+              alpha = .5) +
+    xlab("Episódio") +
+    ylab("Avaliação dos usuários") +
+    ggtitle("Avaliações dos usários para cada episódio de Game of Thrones")
+```
+
+Comparando os três gráficos, vemos que as notas de *Breaking Bad* e *Game of Thrones* variam muito mas sempre numa faixa parecida de valores, e que, em *American Horror Story*, os valores das faixas onde os episódios variam vão lentamente diminuindo até pouco depois do episódio 60, e, a partir deste ponto, a faixa aumenta, dada a diferença entre o maior e menor valor do intervalo.
+As variações nos valores das avaliações pode ser medida através do desvio padrão. Como já calculamos anteriormente esta medida para *Breaking Bad* e *Game of Thrones*, vamos calculá-la agora para *American Horror Story*. 
+
+```{r}
+# Calcula o desvio padrão das avaliações dos usuários
+escolhidas %>% 
+    filter(series_name == "American Horror Story") %>%
+    group_by(series_name) %>% 
+    summarise(Desvio_Padrão = sd(user_rating)) 
+```
+
+Como, dentre as séries analisadas, o maior valor do desvio padrão (aproximadamente 0.49) foi o das avaliações de *Breaking Bad*, e observando, no gráfico, que esses valores variam muito num intervalo curto de episódios, concluímos que a série com qualidade mais irregular entre as avaliadas é *Breaking Bad*.
+
+## Episódios no início/fim da temporada são mais bem avaliados que os no meio? O que tende a ser melhor? Inícios ou finais de séries/temporadas?
+
+Pra responder esta pergunta, vamos analisar as avaliações da série eleita a mais bem avaliada entre as escolhidas, que é *Game of Thrones*. 
+
+```{r}
+escolhidas %>% 
+    filter(series_name == "Game of Thrones") %>% 
+    ggplot(aes(x = season_ep,
+               y = user_rating)) +
+    geom_line(color = "blue",
+              alpha = .7) +
+    scale_x_continuous(breaks = seq(0, 10, 1)) +
+    facet_wrap(~ season) +
+    xlab("Episódio") +
+    ylab("Avaliação dos usuários") +
+    ggtitle("Avaliações para os episódios de cada temporada de Game of Thrones")
+```
+
+Podemos observar que, para *Game of Thrones*, os episódios geralmente mais bem avaliados são os finais de cada temporada. Provavelmente, isso deve-se ao fato de que as revelações e acontecimentos mais importantes da trama ocorrem nestes episódios. No caso de *Game of Thrones*, já é tradição para a série que o clímax de toda temporada sempre ocorra em seu penúltimo episódio, e é possível observar no gráfico que esse episódio, na maioria das temporadas, é o melhor ou se encontra entre os melhores avaliados de cada temporada.

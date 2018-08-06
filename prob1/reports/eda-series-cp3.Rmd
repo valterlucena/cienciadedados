@@ -1,0 +1,253 @@
+---
+title: "Minhas perguntas"
+author: "Valter Lucena"
+date: "3 de maio de 2018"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+theme_set(theme_bw())
+```
+
+Esta análise será realizada utilizando dados sobre avaliações de espisódios de séries presentes no [IMDB](https://www.imdb.com). Mais informações sobre esses dados podem ser encontradas [neste](https://github.com/nazareno/imdb-series) repositório do professor Nazareno Andrade.
+
+# Escolha das séries e entendimento dos dados
+
+Primeiramente, vamos importar os dados e selecionar as séries que serão analisadas.
+
+```{r}
+episodios = read_csv(here("data/series_from_imdb.csv"), 
+                    progress = FALSE,
+                    col_types = cols(.default = col_double(), 
+                                     series_name = col_character(), 
+                                     episode = col_character(), 
+                                     url = col_character(),
+                                     season = col_character()))
+```
+
+Resolvi analisar séries que possuem a mesma quantidade de temporadas e uma quantidade semelhante de episódios por temporada que *Game of Thrones*. Até a época onde esses dados foram coletados, existiam apenas informações sobre os episódios das suas 6 primeiras temporadas. Sabendo que cada temporada de *Game of Thrones* possui 10 episódios, vamos selecionar séries que possuem um número parecido de episódios por temporada. 
+
+```{r}
+episodios %>%
+    mutate(Série = series_name) %>% 
+    group_by(Série) %>% 
+    summarise(Temporadas = max(season), 
+              `Episódios por temporada` = max(season_ep)) %>% 
+    filter(Temporadas == 6, 
+           (`Episódios por temporada` >= 10), 
+           (`Episódios por temporada` <= 13))
+```
+
+Analisaremos, então, *American Horror Story*, *Game of Thrones* e *Homeland*.
+
+```{r}
+series_escolhidas = episodios %>% 
+    filter(series_name %in% c("American Horror Story", 
+                              "Game of Thrones", 
+                              "Homeland"))
+```
+
+***
+
+# Perguntas
+
+## Existe alguma relação entre o número de avaliações e avaliação geral das séries?
+
+```{r}
+series_escolhidas %>% 
+    mutate(Séries = series_name) %>% 
+    ggplot(aes(x = user_rating,
+               y = user_votes,
+               color = Séries)) +
+    geom_jitter(alpha = .5,
+                size = 3) +
+    scale_y_continuous(breaks = seq(0, 150000, 10000)) +
+    facet_wrap(~ series_name) +
+    labs(title = "Relação entre avaliações e a quantidade de avaliação dos episódios da série",
+         x = "Nota do episódio",
+         y = "Avaliação")
+```
+
+Graficamente, podemos observar que *American Horror Story* e *Homeland* se comportam de forma parecida, com as avaliações mais concentradas entre 8 e 9 com menos de 10000 votantes. Já em *Game of Thrones*, percebe-se que todas as avaliações possuem notas maiores ou iguais a 8, e que esse valor aumenta com a quantidade de votos. Podemos usar, aqui, uma medida chamada **correlação** para verificar se duas variáveis se associam linearmente. Essa medida é um valor entre -1 e 1 e é classificada da seguinte forma:
+
+* A associação é dita fraca se o módulo de seu valor aproxima-se de 0, e forte quando aproxima-se de 1.
+* Se o valor da correlação é negativo, os valores de uma variável diminuem quando os da outra aumentam, e, se for positivo, aumentam quando os valores da outra variável também aumentam.
+
+Utilizaremos a **correlação de Pearson** para isso, pois a mesma calcula a correlação entre duas variáveis contínuas.
+
+```{r}
+
+series_escolhidas %>% 
+    group_by(series_name) %>% 
+    mutate(Séries = series_name,
+           correlacao = cor(user_rating, 
+                            user_votes,
+                            method = "pearson")) %>% 
+    ungroup() %>% 
+    select(Séries, correlacao) %>% 
+    unique() %>% 
+    ggplot(aes(x = reorder(Séries, correlacao),
+               y = correlacao,
+               fill = Séries,
+               label = round(correlacao, 2))) +
+    geom_col() +
+    geom_text(position = position_stack(vjust = 0.5)) +
+    labs(title = "Correlação entre avaliações e quantidade de avaliações dos episódios",
+         x = "Séries",
+         y = "Correlação (Pearson)")
+```
+
+Com esses valores, obtemos as seguintes informações:
+
+* Para *Homeland* e *American Horror Story* a associação é fraca, sendo mais significativa em *American Horror Story* e bastante fraca em *Homeland*.
+* Em *Game of Thrones*, a associação é moderadamente significativa, ainda que não seja tão forte.
+
+Assim, podemos concluir que, para as séries analisadas, quanto maior a quantidade de votos, maior é avaliação da série. Esse aumento é mais forte em *American Horror Story* e *Game of Thrones* do que em *Homeland*, mas não é tão significativo. 
+
+É importante ressaltar, que, como a correlação calcula a associação linear entre as variáveis, a observação cuja quantidade de votos é menor que 10000 com uma avaliação um pouco maior que 5 faz com que a nuvem de pontos da série *Homeland* aproxime-se de uma reta horizontal, sendo esta, talvez, a possível causa para a correlação possuir um valor tão baixo. Vamos analisar mais de perto a série *Homeland* e tentar entender por que isso acontece.
+
+### A quantidade de avaliações de *Homeland* mudou ao longo da série?
+
+Vamos ver como as avaliações se comportam ao longo da série.
+
+```{r}
+series_escolhidas %>% 
+    filter(series_name %in% c("Homeland")) %>% 
+    ggplot(aes(x = series_ep,
+               y = user_votes)) +
+    geom_point(color = "dodgerblue3") +
+    scale_x_continuous(breaks = seq(0, 72, 12)) +
+    geom_line(color = "dodgerblue") +
+    labs(title = "Quantidade de avaliações ao longo dos episódios de Homeland",
+         x = "Episódio",
+         y = "Quantidade de avaliações")
+```
+
+A partir do gráfico é possível perceber que a série possuía, mesmo com picos, uma quantidade parecida de votos para seus episódios até aproximadamente seu episódio 48, onde a quantidade começa a diminuir. Por fins de curiosidade, vejamos se o mesmo acontece com a avaliação da série.
+
+```{r}
+series_escolhidas %>% 
+    filter(series_name %in% c("Homeland")) %>% 
+    ggplot(aes(x = series_ep,
+               y = user_rating)) +
+    geom_point(color = "dodgerblue3") +
+    scale_x_continuous(breaks = seq(1, 72, 12)) +
+    geom_line(color = "dodgerblue") +
+    labs(title = "Avaliação ao longo dos episódios de Homeland",
+         x = "Episódio",
+         y = "Avaliação")
+```
+
+Como observado anteriormente com a quantidade de avaliações, a avaliação dos episódios mantêm-se numa faixa parecida até aproximadamente o episódio 48, mas aqui, a avaliação cai drasticamente. Acessando as [análises dos usuários](https://www.imdb.com/title/tt3952170/reviews) do episódio no [IMDB](https://www.imdb.com), uma opinião comum entre os que o avaliaram é de que este se trata do pior episódio da série. 
+
+É interessante observar como os dados refletem essas opiniões, pois, a partir dos dados, podemos concluir que o episódio mais mal avaliado da série é um dos que possuem a maior quantidade de avaliações, e, pelas opiniões dos usuários, que essas avaliações vêm de telespectadores da série que ficaram muito instatisfeitos com os acontecimentos do episódio.
+
+***
+
+## A temporada mais bem avaliada da série possui uma maior proporção de notas 10?
+
+Vejamos, primeiramente, qual a temporada mais bem avaliada de cada série. A temporada mais bem avaliada aqui será a que possuir a maior nota entre as temporadas.
+
+```{r}
+series_escolhidas %>% 
+    group_by(series_name, season) %>% 
+    summarise(Avaliação = max(user_rating)) %>% 
+    ungroup() %>% 
+    select(series_name, season, Avaliação) %>% 
+    mutate(Séries = series_name, Temporada = season) %>% 
+    ggplot(aes(x = Temporada,
+               y = Avaliação,
+               color = Séries)) +
+    geom_point(size = 3) +
+    geom_segment(aes(x = Temporada,
+                     xend = Temporada,
+                     y = 0,
+                     yend = Avaliação)) +
+    facet_wrap(~Séries) +
+    labs(title = "Avaliação geral de cada temporada")
+```
+
+Com o gráfico, observamos que as temporadas mais bem avaliadas de *American Horror Story*, *Game of Thrones* e *Homeland* são, respectivamente, a 2ª, 6ª e 4ª temporadas.
+
+Observemos agora, como se comporta a proporção de notas 10 por temporada.
+
+```{r}
+series_escolhidas %>% 
+    mutate(Séries = series_name) %>% 
+    ggplot(aes(x = season,
+               y = r10 * 100,
+               fill = Séries)) +
+    geom_col(position = "identity") +
+    facet_wrap(~ series_name) +
+    labs(title = "Proporção de avaliações com nota 10 por temporada",
+         x = "Temporada",
+         y = "Proporção de notas 10 (%)") +
+    theme(legend.position = "bottom")
+```
+
+Se procurarmos neste gráfico, as temporadas mais bem avaliadas que encontramos no gráfico anterior, iremos perceber que essas temporadas são as que possuem a maior proporção de notas 10 (*Game of Thrones* e *Homeland*), ou se encontram entre as que possuem a maior proporção (*American Horror Story*).
+
+Logo, é possível concluir, para as séries escolhidas, que a temporada mais bem avaliada de cada série possui uma maior proporção de avaliações com notas 10.
+
+Como discutimos anteriormente, uma outra forma de verificar associação entre variáveis é utilizando a correlação. Vejamos, agora, se a conclusão que aqui chegamos mantém-se ao verificar a correlação entre a proporção de notas 10 e a avaliação da série.
+
+### A avaliação da série está, de alguma forma, associada com a proporção de notas 10 que seus episódios recebem?
+
+Primeiramente, vamos utilizar um gráfico de pontos para verificar a distribuição das observações.
+
+```{r}
+series_escolhidas %>% 
+    mutate(Séries = series_name) %>% 
+    ggplot(aes(x = user_rating,
+               y = r10 * 100,
+               color = Séries)) +
+    geom_jitter(alpha = .6,
+                size = 2) +
+    scale_y_continuous(breaks = seq(0, 1, 0.10)) +
+    facet_wrap(~series_name) +
+    labs(title = "Relação entre proporção de notas 10 e avaliações dos episódios",
+         x = "Avaliação",
+         y = "Proporção de notas 10 (%)")
+```
+
+Observamos, pelo gráfico, que a maioria das observações de *American Horror Story* concentram-se na mesma faixa de proporção para o mesmo intervalo de notas. A maioria dos episódios que possuem uma nota na faixa entre aproxidamente 7.5 e 9 possuem entre 20% e 40% de notas 10. 
+
+Em *Homeland*, essa proporção concentra-se entre 10% e 30% no intervalo de notas que vai de 7 até aproximadamente 9. Mais uma vez observamos o ponto destoante, que agora sabemos que pertence ao episódio 48. Uma observação a se fazer aqui é que, mesmo com quase 80% de notas 10, a avaliação do episódio ainda foi muito baixa. 
+
+Para *Game of Thrones*, os dados estão mais distruibuidos em relação a proporção, com todas as observações com notas entre 8 e 10.
+
+Vejamos agora, a correlação linear entre a avaliação dos episódios e a proporção de notas 10. Utilizaremos a correlação de Pearson, também, pois as duas variáveis são contínuas.
+
+```{r}
+series_escolhidas %>% 
+    group_by(series_name) %>% 
+    mutate(Séries = series_name,
+           correlacao = cor(user_rating, 
+                            r10,
+                            method = "pearson")) %>% 
+    ungroup() %>% 
+    select(Séries, correlacao) %>% 
+    unique() %>% 
+    ggplot(aes(x = reorder(Séries, correlacao),
+               y = correlacao,
+               fill = Séries,
+               label = round(correlacao, 2))) +
+    geom_col() +
+    geom_text(position = position_stack(vjust = 0.5)) +
+    labs(title = "Correlação entre avaliação dos episódios e proporção de notas 10",
+         x = "Série",
+         y = "Correlação (Pearson)")
+```
+
+Os resultados de correlação entre proporção de votos e avaliação e quantidade de votos e avaliação não mudam muito. Aqui, mais uma vez, observamos que o valor para *Homeland* aproxima-se de 0, que, entre outros fatores, pode ter sido causado pela avaliações do episódio 48, e para *American Horror Story* e *Game of Thrones*, o valor é um pouco maior e mais significativo, mas não tão significativo assim. A partir disso, concluímos que há uma associação entre a proporção de notas 10 dadas a um episódio da série, e a avaliação geral da mesma. Esta associação é muito fraca em *Homeland*, e moderatamente significativa em *American Horror Story* e *Game of Thrones*.
+
+***
